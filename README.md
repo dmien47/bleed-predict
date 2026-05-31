@@ -68,17 +68,22 @@ README.md
 /bp reset
 /bp start
 /bp stop
+/bp clear
 /bp test
+/bp test stop
 /bp status
+/bp blocked
 ```
 
 Useful first checks:
 
 - `/bp test` simulates a bleed using your current non-tank roster so you can verify the box and prediction order before entering the dungeon.
+- `/bp test stop`, `/bp stop`, or `/bp clear` stops test mode and hides the box.
 - `/bp show` keeps the box visible outside Saprish.
 - `/bp hide` returns the box to Saprish-only visibility.
 - `/bp debug` toggles chat logging.
 - `/bp status` prints the detected non-tank roster and current possible targets.
+- `/bp blocked` prints any blocked-action diagnostics the addon saw.
 - Drag the box with left mouse while it is unlocked.
 
 ## How To Test On Saprish

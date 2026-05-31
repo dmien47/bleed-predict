@@ -1,7 +1,6 @@
 local ADDON_NAME = ...
 
-local BP = CreateFrame("Frame", "BleedPredictEventFrame")
-_G.BleedPredict = BP
+local BP = CreateFrame("Frame")
 
 local DB_DEFAULTS = {
     debug = true,
@@ -29,9 +28,11 @@ local titleText
 local statusText
 local targetsText
 local historyText
+local CreateDisplay
 
 local initialized = false
 local active = false
+local testMode = false
 local pounceWindowUntil = 0
 local roster = {}
 local unitsByGUID = {}
@@ -40,6 +41,10 @@ local history = {}
 local lastDetectionTime = 0
 local lastDetectionGUID
 local pendingDamage = {}
+
+local function IsDisplayWanted()
+    return active or (db and db.alwaysShow)
+end
 
 local function CopyDefaults(target, defaults)
     for key, value in pairs(defaults) do
@@ -338,11 +343,15 @@ local function FormatEntries(entries)
 end
 
 local function UpdateDisplay()
+    if not frame and IsDisplayWanted() and CreateDisplay then
+        CreateDisplay()
+    end
+
     if not frame then
         return
     end
 
-    if not active and not db.alwaysShow then
+    if not IsDisplayWanted() then
         frame:Hide()
         return
     end
@@ -352,7 +361,9 @@ local function UpdateDisplay()
     local candidates = GetPossibleTargets()
     local status
 
-    if active then
+    if testMode then
+        status = string.format("Test mode - %d bleed%s seen", #history, #history == 1 and "" or "s")
+    elseif active then
         status = string.format("Saprish active - %d bleed%s seen", #history, #history == 1 and "" or "s")
     else
         status = "Waiting for Saprish"
@@ -379,6 +390,7 @@ end
 
 local function ResetFight(reason)
     active = false
+    testMode = false
     pounceWindowUntil = 0
     history = {}
     lastDetectionTime = 0
@@ -391,8 +403,9 @@ local function ResetFight(reason)
     end
 end
 
-local function StartFight(reason)
+local function StartFight(reason, isTest)
     active = true
+    testMode = isTest or false
     pounceWindowUntil = 0
     history = {}
     lastDetectionTime = 0
@@ -586,13 +599,21 @@ local function HandleCombatLog()
 end
 
 local function SetSavedFramePoint()
+    if not frame then
+        return
+    end
+
     local point = db.point or DB_DEFAULTS.point
     frame:ClearAllPoints()
     frame:SetPoint(point[1] or "CENTER", UIParent, point[2] or "CENTER", point[3] or 0, point[4] or 120)
 end
 
-local function CreateDisplay()
-    frame = CreateFrame("Frame", "BleedPredictFrame", UIParent, "BackdropTemplate")
+CreateDisplay = function()
+    if frame then
+        return
+    end
+
+    frame = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     frame:SetSize(210, 92)
     frame:SetMovable(true)
     frame:EnableMouse(true)
@@ -654,19 +675,42 @@ local function PrintHelp()
     Print("/bp debug - toggle debug chat output")
     Print("/bp reset - reset position and fight history")
     Print("/bp start - manually start Saprish tracking")
-    Print("/bp stop - manually stop Saprish tracking")
+    Print("/bp stop - stop Saprish or test tracking")
+    Print("/bp clear - stop tracking and hide the box")
     Print("/bp test - simulate the next bleed using your current party roster")
+    Print("/bp test stop - stop test mode")
     Print("/bp status - print current non-tank roster and history")
+    Print("/bp blocked - print blocked-action diagnostics")
 end
 
 local function PrintStatus()
     local nonTanks = GetNonTanks()
-    Print("Debug is " .. (db.debug and "ON" or "OFF") .. ". Tracking is " .. (active and "ACTIVE" or "inactive") .. ".")
+    local mode = active and (testMode and "TEST" or "Saprish") or "inactive"
+    Print("Debug is " .. (db.debug and "ON" or "OFF") .. ". Tracking is " .. mode .. ".")
     Print("Non-tanks: " .. FormatEntries(nonTanks))
     Print("Possible next: " .. FormatEntries(GetPossibleTargets()))
 end
 
+local function PrintBlockedActions()
+    local blockedActions = db.blockedActions or {}
+    if #blockedActions == 0 then
+        Print("No blocked actions recorded by this addon.")
+        return
+    end
+
+    local first = math.max(1, #blockedActions - 4)
+    for index = first, #blockedActions do
+        local blocked = blockedActions[index]
+        Print(string.format("Blocked %d: %s %s at %s", index, blocked.event or "?", blocked.action or "?", blocked.time or "?"))
+    end
+end
+
 local function SimulateBleed()
+    if active and not testMode then
+        Print("Saprish tracking is active. Use /bp stop before starting a test.")
+        return
+    end
+
     local candidates = GetPossibleTargets()
     if #candidates == 0 then
         Print("No non-tank candidates found. Join a party or set roles, then try /bp test again.")
@@ -674,7 +718,7 @@ local function SimulateBleed()
     end
 
     if not active then
-        StartFight("Test mode started.")
+        StartFight("Test mode started.", true)
     end
 
     local chosen = candidates[1]
@@ -684,33 +728,42 @@ end
 
 local function HandleSlash(input)
     input = string.lower(strtrim(input or ""))
+    local command, rest = strsplit(" ", input, 2)
+    command = command or ""
+    rest = strtrim(rest or "")
 
-    if input == "show" then
+    if command == "show" then
         db.alwaysShow = true
         UpdateDisplay()
         Print("Frame shown. Use /bp hide to return to Saprish-only display.")
-    elseif input == "hide" then
+    elseif command == "hide" then
         db.alwaysShow = false
         UpdateDisplay()
         Print("Frame will only show during Saprish tracking or /bp test.")
-    elseif input == "lock" then
+    elseif command == "lock" then
         db.locked = not db.locked
         Print(db.locked and "Frame locked." or "Frame unlocked. Drag it with left mouse.")
-    elseif input == "debug" then
+    elseif command == "debug" then
         db.debug = not db.debug
         Print(db.debug and "Debug output ON." or "Debug output OFF.")
-    elseif input == "reset" then
+    elseif command == "reset" then
         db.point = { "CENTER", "CENTER", 0, 120 }
         SetSavedFramePoint()
         ResetFight("Position and fight history reset.")
-    elseif input == "start" then
+    elseif command == "start" then
         StartFight("Manual Saprish tracking started.")
-    elseif input == "stop" then
-        ResetFight("Manual Saprish tracking stopped.")
-    elseif input == "test" then
+    elseif command == "stop" or command == "clear" then
+        db.alwaysShow = false
+        ResetFight("Tracking stopped.")
+    elseif command == "test" and (rest == "stop" or rest == "clear" or rest == "reset") then
+        db.alwaysShow = false
+        ResetFight("Test mode stopped.")
+    elseif command == "test" then
         SimulateBleed()
-    elseif input == "status" then
+    elseif command == "status" then
         PrintStatus()
+    elseif command == "blocked" then
+        PrintBlockedActions()
     else
         PrintHelp()
     end
@@ -737,8 +790,6 @@ local function OnEvent(self, event, ...)
         end
 
         initialized = true
-        CreateDisplay()
-        UpdateDisplay()
 
         SLASH_BLEEDPREDICT1 = "/bp"
         SLASH_BLEEDPREDICT2 = "/bleedpredict"
@@ -780,6 +831,17 @@ local function OnEvent(self, event, ...)
         end
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
         HandleCombatLog()
+    elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
+        local addonName, blockedFunction = ...
+        if addonName == ADDON_NAME then
+            BleedPredictDB.blockedActions = BleedPredictDB.blockedActions or {}
+            BleedPredictDB.blockedActions[#BleedPredictDB.blockedActions + 1] = {
+                event = event,
+                action = tostring(blockedFunction),
+                time = date and date("%Y-%m-%d %H:%M:%S") or tostring(GetServerTime and GetServerTime() or GetTime()),
+            }
+            Print(event .. ": " .. tostring(blockedFunction) .. ". This was saved to BleedPredictDB.blockedActions.")
+        end
     end
 end
 
@@ -794,3 +856,5 @@ BP:RegisterEvent("ENCOUNTER_END")
 BP:RegisterEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT")
 BP:RegisterEvent("UNIT_AURA")
 BP:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+BP:RegisterEvent("ADDON_ACTION_BLOCKED")
+BP:RegisterEvent("ADDON_ACTION_FORBIDDEN")
