@@ -60,37 +60,36 @@ README.md
 ## In-Game Commands
 
 ```text
-/bp
-/bp show
-/bp hide
-/bp lock
-/bp debug
-/bp reset
-/bp start
-/bp stop
-/bp clear
-/bp test
-/bp test stop
-/bp status
-/bp blocked
+/bleedpredict
+/bleedpredict show
+/bleedpredict hide
+/bleedpredict debug
+/bleedpredict reset
+/bleedpredict start
+/bleedpredict stop
+/bleedpredict clear
+/bleedpredict test
+/bleedpredict test stop
+/bleedpredict status
+/bleedpredict blocked
 ```
 
 Useful first checks:
 
-- `/bp test` simulates a bleed using your current non-tank roster so you can verify the box and prediction order before entering the dungeon.
-- `/bp test stop`, `/bp stop`, or `/bp clear` stops test mode and hides the box.
-- `/bp show` keeps the box visible outside Saprish until you hide it or reload.
-- `/bp hide` returns the box to Saprish-only visibility.
-- `/bp debug` toggles chat logging.
-- `/bp status` prints the detected non-tank roster and current possible targets.
-- `/bp blocked` prints any blocked-action diagnostics the addon saw.
-- Drag the box with left mouse while it is unlocked.
+- `/bleedpredict test` simulates a bleed using your current non-tank roster so you can verify the box and prediction order before entering the dungeon.
+- `/bleedpredict test stop`, `/bleedpredict stop`, or `/bleedpredict clear` stops test mode and hides the box.
+- `/bleedpredict show` keeps the box visible outside Saprish until you hide it or reload.
+- `/bleedpredict hide` returns the box to Saprish-only visibility.
+- `/bleedpredict debug` toggles chat logging.
+- `/bleedpredict status` prints the detected non-tank roster and current possible targets.
+- `/bleedpredict blocked` prints any blocked-action diagnostics the addon saw.
+- Movement is temporarily disabled while we isolate the Blizzard blocked-action popup.
 
 ## How To Test On Saprish
 
 1. Enter current Mythic+ Seat of the Triumvirate.
 2. Make sure party roles are assigned correctly. The addon excludes units whose role is `TANK`.
-3. Before pulling Saprish, type `/bp status` and confirm the non-tank list is correct.
+3. Before pulling Saprish, type `/bleedpredict status` and confirm the non-tank list is correct.
 4. Pull Saprish.
 5. Watch chat for debug lines like:
 

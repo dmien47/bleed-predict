@@ -4,7 +4,6 @@ local BP = CreateFrame("Frame")
 
 local DB_DEFAULTS = {
     debug = true,
-    locked = false,
     point = { "CENTER", "CENTER", 0, 120 },
 }
 
@@ -614,36 +613,15 @@ CreateDisplay = function()
         return
     end
 
-    frame = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    frame = CreateFrame("Frame", nil, UIParent)
     frame:SetSize(210, 92)
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:RegisterForDrag("LeftButton")
     frame:SetClampedToScreen(true)
-    frame:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true,
-        tileSize = 16,
-        edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    frame:SetBackdropColor(0.05, 0.05, 0.08, 0.88)
-    frame:SetBackdropBorderColor(0.55, 0.35, 0.85, 0.9)
-
-    frame:SetScript("OnDragStart", function(self)
-        if not db.locked then
-            self:StartMoving()
-        end
-    end)
-
-    frame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        local point, relativeTo, relativePoint, xOfs, yOfs = self:GetPoint(1)
-        db.point = { point, relativePoint, xOfs, yOfs }
-    end)
 
     SetSavedFramePoint()
+
+    local background = frame:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints(frame)
+    background:SetColorTexture(0.05, 0.05, 0.08, 0.88)
 
     titleText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     titleText:SetPoint("TOPLEFT", 10, -8)
@@ -670,18 +648,17 @@ CreateDisplay = function()
 end
 
 local function PrintHelp()
-    Print("/bp show - show the prediction box")
-    Print("/bp hide - hide the prediction box outside Saprish")
-    Print("/bp lock - lock or unlock dragging")
-    Print("/bp debug - toggle debug chat output")
-    Print("/bp reset - reset position and fight history")
-    Print("/bp start - manually start Saprish tracking")
-    Print("/bp stop - stop Saprish or test tracking")
-    Print("/bp clear - stop tracking and hide the box")
-    Print("/bp test - simulate the next bleed using your current party roster")
-    Print("/bp test stop - stop test mode")
-    Print("/bp status - print current non-tank roster and history")
-    Print("/bp blocked - print blocked-action diagnostics")
+    Print("/bleedpredict show - show the prediction box")
+    Print("/bleedpredict hide - hide the prediction box outside Saprish")
+    Print("/bleedpredict debug - toggle debug chat output")
+    Print("/bleedpredict reset - reset position and fight history")
+    Print("/bleedpredict start - manually start Saprish tracking")
+    Print("/bleedpredict stop - stop Saprish or test tracking")
+    Print("/bleedpredict clear - stop tracking and hide the box")
+    Print("/bleedpredict test - simulate the next bleed using your current party roster")
+    Print("/bleedpredict test stop - stop test mode")
+    Print("/bleedpredict status - print current non-tank roster and history")
+    Print("/bleedpredict blocked - print blocked-action diagnostics")
 end
 
 local function PrintStatus()
@@ -708,13 +685,13 @@ end
 
 local function SimulateBleed()
     if active and not testMode then
-        Print("Saprish tracking is active. Use /bp stop before starting a test.")
+        Print("Saprish tracking is active. Use /bleedpredict stop before starting a test.")
         return
     end
 
     local candidates = GetPossibleTargets()
     if #candidates == 0 then
-        Print("No non-tank candidates found. Join a party or set roles, then try /bp test again.")
+        Print("No non-tank candidates found. Join a party or set roles, then try /bleedpredict test again.")
         return
     end
 
@@ -736,14 +713,11 @@ local function HandleSlash(input)
     if command == "show" then
         forceShow = true
         UpdateDisplay()
-        Print("Frame shown. Use /bp hide to return to Saprish-only display.")
+        Print("Frame shown. Use /bleedpredict hide to return to Saprish-only display.")
     elseif command == "hide" then
         forceShow = false
         UpdateDisplay()
-        Print("Frame will only show during Saprish tracking or /bp test.")
-    elseif command == "lock" then
-        db.locked = not db.locked
-        Print(db.locked and "Frame locked." or "Frame unlocked. Drag it with left mouse.")
+        Print("Frame will only show during Saprish tracking or /bleedpredict test.")
     elseif command == "debug" then
         db.debug = not db.debug
         Print(db.debug and "Debug output ON." or "Debug output OFF.")
@@ -791,11 +765,10 @@ local function OnEvent(self, event, ...)
 
         initialized = true
 
-        SLASH_BLEEDPREDICT1 = "/bp"
-        SLASH_BLEEDPREDICT2 = "/bleedpredict"
+        SLASH_BLEEDPREDICT1 = "/bleedpredict"
         SlashCmdList.BLEEDPREDICT = HandleSlash
 
-        Print("Loaded. Type /bp for commands.")
+        Print("Loaded. Type /bleedpredict for commands.")
     elseif event == "PLAYER_ENTERING_WORLD" or event == "GROUP_ROSTER_UPDATE" or event == "ROLE_CHANGED_INFORM" then
         if not initialized then
             return
@@ -840,7 +813,7 @@ local function OnEvent(self, event, ...)
             action = tostring(blockedFunction),
             time = date and date("%Y-%m-%d %H:%M:%S") or tostring(GetServerTime and GetServerTime() or GetTime()),
         }
-        Print(event .. ": addon=" .. tostring(addonName) .. " action=" .. tostring(blockedFunction) .. ". Saved for /bp blocked.")
+        Print(event .. ": addon=" .. tostring(addonName) .. " action=" .. tostring(blockedFunction) .. ". Saved for /bleedpredict blocked.")
     end
 end
 
