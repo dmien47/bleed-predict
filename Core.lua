@@ -8,6 +8,8 @@ local blockedCount = 0
 local encounterActive = false
 local encounterName = nil
 local bossUnitSeen = false
+local combatLogRegistered = false
+local manualCombatLog = false
 local shadowPounceEvents = 0
 local lastShadowPounceEvent = nil
 local roster = {}
@@ -116,6 +118,18 @@ local function PrintRoster()
     Print("Roster: " .. table.concat(names, ", "))
 end
 
+local function SetCombatLogRegistered(enabled, reason)
+    if enabled and not combatLogRegistered then
+        BP:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+        combatLogRegistered = true
+        Print("Combat-log diagnostics enabled" .. (reason and (" (" .. reason .. ").") or "."))
+    elseif not enabled and combatLogRegistered then
+        BP:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+        combatLogRegistered = false
+        Print("Combat-log diagnostics disabled" .. (reason and (" (" .. reason .. ").") or "."))
+    end
+end
+
 local function HandleSlash(input)
     input = string.lower(strtrim(input or ""))
 
@@ -128,11 +142,23 @@ local function HandleSlash(input)
         Print("Roster units tracked: " .. tostring(#roster))
         Print("Encounter active: " .. tostring(encounterActive) .. " " .. tostring(encounterName or ""))
         Print("Saprish boss unit seen: " .. tostring(bossUnitSeen))
+        Print("Combat-log registered: " .. tostring(combatLogRegistered))
+        Print("Manual combat-log mode: " .. tostring(manualCombatLog))
         Print("Shadow Pounce combat-log events seen: " .. tostring(shadowPounceEvents))
         Print("Last Shadow Pounce event: " .. tostring(lastShadowPounceEvent or "none"))
         Print("No UI or aura scanning is loaded.")
     elseif input == "roster" then
         PrintRoster()
+    elseif input == "cleu on" then
+        manualCombatLog = true
+        SetCombatLogRegistered(true, "manual")
+    elseif input == "cleu off" then
+        manualCombatLog = false
+        if not encounterActive then
+            SetCombatLogRegistered(false, "manual")
+        else
+            Print("Combat-log diagnostics remain enabled because the Saprish encounter is active.")
+        end
     elseif input == "blocked" then
         local blockedActions = db and db.blockedActions or {}
         if #blockedActions == 0 then
@@ -153,6 +179,8 @@ local function HandleSlash(input)
     else
         Print("/bleedpredict status - show event-core diagnostic status")
         Print("/bleedpredict roster - show current group roles")
+        Print("/bleedpredict cleu on - manually enable combat-log diagnostics")
+        Print("/bleedpredict cleu off - manually disable combat-log diagnostics")
         Print("/bleedpredict blocked - show blocked-action diagnostics")
     end
 end
@@ -183,6 +211,7 @@ local function OnEvent(self, event, ...)
             encounterActive = true
             encounterName = newEncounterName
             Print("Saprish encounter started: " .. tostring(newEncounterName) .. " (" .. tostring(encounterID) .. ").")
+            SetCombatLogRegistered(true, "Saprish encounter")
         end
     elseif event == "ENCOUNTER_END" then
         local encounterID, endedEncounterName = ...
@@ -190,6 +219,9 @@ local function OnEvent(self, event, ...)
             encounterActive = false
             encounterName = endedEncounterName
             Print("Saprish encounter ended: " .. tostring(endedEncounterName) .. " (" .. tostring(encounterID) .. ").")
+            if not manualCombatLog then
+                SetCombatLogRegistered(false, "Saprish encounter ended")
+            end
         end
     elseif event == "INSTANCE_ENCOUNTER_ENGAGE_UNIT" then
         for index = 1, 5 do
@@ -197,6 +229,7 @@ local function OnEvent(self, event, ...)
             if UnitExists(unit) and IsSaprishName(UnitName(unit)) then
                 bossUnitSeen = true
                 Print("Saprish boss unit seen: " .. tostring(unit) .. ".")
+                SetCombatLogRegistered(true, "Saprish boss unit")
                 break
             end
         end
@@ -237,6 +270,5 @@ BP:RegisterEvent("ROLE_CHANGED_INFORM")
 BP:RegisterEvent("ENCOUNTER_START")
 BP:RegisterEvent("ENCOUNTER_END")
 BP:RegisterEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT")
-BP:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 BP:RegisterEvent("ADDON_ACTION_BLOCKED")
 BP:RegisterEvent("ADDON_ACTION_FORBIDDEN")
