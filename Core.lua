@@ -12,6 +12,9 @@ local combatLogRegistered = false
 local manualCombatLog = false
 local shadowPounceEvents = 0
 local lastShadowPounceEvent = nil
+local trackingActive = false
+local testMode = false
+local history = {}
 local roster = {}
 
 local CLASS_COLORS = CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS
@@ -87,19 +90,170 @@ local function UpdateRoster()
     for _, unit in ipairs(UnitIterator()) do
         if UnitExists(unit) then
             local name = UnitName(unit)
+            local guid = UnitGUID(unit)
             local _, classToken = UnitClass(unit)
             local role = UnitGroupRolesAssigned(unit)
 
-            if name then
+            if guid and name then
                 roster[#roster + 1] = {
                     unit = unit,
+                    guid = guid,
                     name = name,
                     classToken = classToken,
                     role = role,
+                    isTank = role == "TANK",
+                    order = #roster + 1,
                 }
             end
         end
     end
+end
+
+local function GetRosterEntry(guid)
+    if not guid then
+        return nil
+    end
+
+    UpdateRoster()
+
+    for _, entry in ipairs(roster) do
+        if entry.guid == guid then
+            return entry
+        end
+    end
+end
+
+local function IsKnownPartyGUID(guid)
+    return GetRosterEntry(guid) ~= nil
+end
+
+local function GetNonTanks()
+    UpdateRoster()
+
+    local nonTanks = {}
+    for _, entry in ipairs(roster) do
+        if not entry.isTank then
+            nonTanks[#nonTanks + 1] = entry
+        end
+    end
+
+    return nonTanks
+end
+
+local function GetHistoryIndex(guid)
+    for index = #history, 1, -1 do
+        if history[index].guid == guid then
+            return index
+        end
+    end
+
+    return 0
+end
+
+local function GetPossibleTargets()
+    local nonTanks = GetNonTanks()
+    local candidates = {}
+
+    if #history < 2 then
+        local alreadyChosen = {}
+        for _, event in ipairs(history) do
+            alreadyChosen[event.guid] = true
+        end
+
+        for _, entry in ipairs(nonTanks) do
+            if not alreadyChosen[entry.guid] then
+                candidates[#candidates + 1] = entry
+            end
+        end
+
+        return candidates
+    end
+
+    table.sort(nonTanks, function(left, right)
+        local leftIndex = GetHistoryIndex(left.guid)
+        local rightIndex = GetHistoryIndex(right.guid)
+
+        if leftIndex == rightIndex then
+            return left.order < right.order
+        end
+
+        return leftIndex < rightIndex
+    end)
+
+    for index = 1, math.min(2, #nonTanks) do
+        candidates[#candidates + 1] = nonTanks[index]
+    end
+
+    return candidates
+end
+
+local function FormatEntries(entries)
+    if not entries or #entries == 0 then
+        return "|cffaaaaaaNone known|r"
+    end
+
+    local names = {}
+    for _, entry in ipairs(entries) do
+        names[#names + 1] = ColorizeName(entry.name, entry.classToken)
+    end
+
+    return table.concat(names, "  ")
+end
+
+local function StartTracking(reason, isTest)
+    trackingActive = true
+    testMode = isTest or false
+    history = {}
+    UpdateRoster()
+    Print(reason or "Tracking started.")
+    Print("Possible next: " .. FormatEntries(GetPossibleTargets()))
+end
+
+local function StopTracking(reason)
+    trackingActive = false
+    testMode = false
+    history = {}
+    Print(reason or "Tracking stopped.")
+end
+
+local function RecordPounce(guid, name, source)
+    local entry = GetRosterEntry(guid)
+    if entry and entry.isTank then
+        Print("Ignoring tank bleed candidate: " .. ColorizeName(entry.name, entry.classToken) .. ".")
+        return
+    end
+
+    history[#history + 1] = {
+        guid = guid,
+        name = name or (entry and entry.name) or "Unknown",
+        classToken = entry and entry.classToken,
+    }
+
+    Print(string.format("Bleed #%d detected on %s via %s.",
+        #history,
+        ColorizeName(history[#history].name, history[#history].classToken),
+        source or "unknown"))
+    Print("Possible next: " .. FormatEntries(GetPossibleTargets()))
+end
+
+local function SimulateBleed()
+    if trackingActive and not testMode then
+        Print("Saprish tracking is active. Use /bleedpredict stop before starting a test.")
+        return
+    end
+
+    if not trackingActive then
+        StartTracking("Test mode started.", true)
+    end
+
+    local candidates = GetPossibleTargets()
+    if #candidates == 0 then
+        Print("No non-tank candidates found.")
+        return
+    end
+
+    local chosen = candidates[1]
+    RecordPounce(chosen.guid, chosen.name, "test command")
 end
 
 local function PrintRoster()
@@ -144,8 +298,12 @@ local function HandleSlash(input)
         Print("Saprish boss unit seen: " .. tostring(bossUnitSeen))
         Print("Combat-log registered: " .. tostring(combatLogRegistered))
         Print("Manual combat-log mode: " .. tostring(manualCombatLog))
+        Print("Tracking active: " .. tostring(trackingActive))
+        Print("Test mode: " .. tostring(testMode))
+        Print("Bleeds recorded: " .. tostring(#history))
         Print("Shadow Pounce combat-log events seen: " .. tostring(shadowPounceEvents))
         Print("Last Shadow Pounce event: " .. tostring(lastShadowPounceEvent or "none"))
+        Print("Possible next: " .. FormatEntries(GetPossibleTargets()))
         Print("No UI or aura scanning is loaded.")
     elseif input == "roster" then
         PrintRoster()
@@ -159,6 +317,18 @@ local function HandleSlash(input)
         else
             Print("Combat-log diagnostics remain enabled because the Saprish encounter is active.")
         end
+    elseif input == "start" then
+        StartTracking("Manual tracking started.", false)
+        SetCombatLogRegistered(true, "manual tracking")
+    elseif input == "stop" or input == "clear" then
+        StopTracking("Tracking stopped.")
+        if not encounterActive and not manualCombatLog then
+            SetCombatLogRegistered(false, "tracking stopped")
+        end
+    elseif input == "test" then
+        SimulateBleed()
+    elseif input == "test stop" or input == "test clear" or input == "test reset" then
+        StopTracking("Test mode stopped.")
     elseif input == "blocked" then
         local blockedActions = db and db.blockedActions or {}
         if #blockedActions == 0 then
@@ -181,6 +351,10 @@ local function HandleSlash(input)
         Print("/bleedpredict roster - show current group roles")
         Print("/bleedpredict cleu on - manually enable combat-log diagnostics")
         Print("/bleedpredict cleu off - manually disable combat-log diagnostics")
+        Print("/bleedpredict start - manually start tracking")
+        Print("/bleedpredict stop - stop tracking")
+        Print("/bleedpredict test - simulate a bleed")
+        Print("/bleedpredict test stop - stop test mode")
         Print("/bleedpredict blocked - show blocked-action diagnostics")
     end
 end
@@ -210,13 +384,20 @@ local function OnEvent(self, event, ...)
         if IsSaprishName(newEncounterName) then
             encounterActive = true
             encounterName = newEncounterName
+            trackingActive = true
+            testMode = false
+            history = {}
+            UpdateRoster()
             Print("Saprish encounter started: " .. tostring(newEncounterName) .. " (" .. tostring(encounterID) .. ").")
+            Print("Possible next: " .. FormatEntries(GetPossibleTargets()))
             SetCombatLogRegistered(true, "Saprish encounter")
         end
     elseif event == "ENCOUNTER_END" then
         local encounterID, endedEncounterName = ...
         if encounterActive and IsSaprishName(endedEncounterName) then
             encounterActive = false
+            trackingActive = false
+            testMode = false
             encounterName = endedEncounterName
             Print("Saprish encounter ended: " .. tostring(endedEncounterName) .. " (" .. tostring(encounterID) .. ").")
             if not manualCombatLog then
@@ -244,6 +425,10 @@ local function OnEvent(self, event, ...)
                 tostring(destName or "no target"),
                 tostring(spellID))
             Print("Shadow Pounce combat log: " .. lastShadowPounceEvent)
+
+            if trackingActive and (subevent == "SPELL_AURA_APPLIED" or subevent == "SPELL_DAMAGE") and IsKnownPartyGUID(destGUID) then
+                RecordPounce(destGUID, destName, subevent)
+            end
         end
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
         local addonName, blockedFunction = ...
