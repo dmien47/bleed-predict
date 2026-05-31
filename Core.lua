@@ -5,9 +5,16 @@ local db
 local loaded = false
 local loggedIn = false
 local blockedCount = 0
+local encounterActive = false
+local encounterName = nil
+local bossUnitSeen = false
 local roster = {}
 
 local CLASS_COLORS = CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS
+
+local SAPRISH_NAMES = {
+    ["saprish"] = true,
+}
 
 local function Print(message)
     DEFAULT_CHAT_FRAME:AddMessage("|cffb967ffBleedPredict:|r " .. tostring(message))
@@ -36,6 +43,11 @@ local function ColorizeName(name, classToken)
     local blue = math.floor((color.b or 1) * 255 + 0.5)
 
     return string.format("|cff%02x%02x%02x%s|r", red, green, blue, ShortName(name) or "Unknown")
+end
+
+local function IsSaprishName(name)
+    name = name and string.lower(name)
+    return name and SAPRISH_NAMES[name]
 end
 
 local function UnitIterator()
@@ -104,7 +116,9 @@ local function HandleSlash(input)
         Print("PLAYER_LOGIN seen: " .. tostring(loggedIn))
         Print("Blocked-action events seen: " .. tostring(blockedCount))
         Print("Roster units tracked: " .. tostring(#roster))
-        Print("No UI, encounter tracking, combat-log tracking, or aura scanning is loaded.")
+        Print("Encounter active: " .. tostring(encounterActive) .. " " .. tostring(encounterName or ""))
+        Print("Saprish boss unit seen: " .. tostring(bossUnitSeen))
+        Print("No UI, combat-log tracking, or aura scanning is loaded.")
     elseif input == "roster" then
         PrintRoster()
     elseif input == "blocked" then
@@ -151,6 +165,29 @@ local function OnEvent(self, event, ...)
         SlashCmdList.BLEEDPREDICT = HandleSlash
     elseif event == "PLAYER_ENTERING_WORLD" or event == "GROUP_ROSTER_UPDATE" or event == "ROLE_CHANGED_INFORM" then
         UpdateRoster()
+    elseif event == "ENCOUNTER_START" then
+        local encounterID, newEncounterName = ...
+        if IsSaprishName(newEncounterName) then
+            encounterActive = true
+            encounterName = newEncounterName
+            Print("Saprish encounter started: " .. tostring(newEncounterName) .. " (" .. tostring(encounterID) .. ").")
+        end
+    elseif event == "ENCOUNTER_END" then
+        local encounterID, endedEncounterName = ...
+        if encounterActive and IsSaprishName(endedEncounterName) then
+            encounterActive = false
+            encounterName = endedEncounterName
+            Print("Saprish encounter ended: " .. tostring(endedEncounterName) .. " (" .. tostring(encounterID) .. ").")
+        end
+    elseif event == "INSTANCE_ENCOUNTER_ENGAGE_UNIT" then
+        for index = 1, 5 do
+            local unit = "boss" .. index
+            if UnitExists(unit) and IsSaprishName(UnitName(unit)) then
+                bossUnitSeen = true
+                Print("Saprish boss unit seen: " .. tostring(unit) .. ".")
+                break
+            end
+        end
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
         local addonName, blockedFunction = ...
         BleedPredictDB = BleedPredictDB or {}
@@ -173,5 +210,8 @@ BP:RegisterEvent("PLAYER_LOGIN")
 BP:RegisterEvent("PLAYER_ENTERING_WORLD")
 BP:RegisterEvent("GROUP_ROSTER_UPDATE")
 BP:RegisterEvent("ROLE_CHANGED_INFORM")
+BP:RegisterEvent("ENCOUNTER_START")
+BP:RegisterEvent("ENCOUNTER_END")
+BP:RegisterEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT")
 BP:RegisterEvent("ADDON_ACTION_BLOCKED")
 BP:RegisterEvent("ADDON_ACTION_FORBIDDEN")
