@@ -5,7 +5,6 @@ local BP = CreateFrame("Frame")
 local DB_DEFAULTS = {
     debug = true,
     locked = false,
-    alwaysShow = false,
     point = { "CENTER", "CENTER", 0, 120 },
 }
 
@@ -33,6 +32,7 @@ local CreateDisplay
 local initialized = false
 local active = false
 local testMode = false
+local forceShow = false
 local pounceWindowUntil = 0
 local roster = {}
 local unitsByGUID = {}
@@ -43,7 +43,7 @@ local lastDetectionGUID
 local pendingDamage = {}
 
 local function IsDisplayWanted()
-    return active or (db and db.alwaysShow)
+    return active or forceShow
 end
 
 local function CopyDefaults(target, defaults)
@@ -391,6 +391,7 @@ end
 local function ResetFight(reason)
     active = false
     testMode = false
+    forceShow = false
     pounceWindowUntil = 0
     history = {}
     lastDetectionTime = 0
@@ -701,7 +702,7 @@ local function PrintBlockedActions()
     local first = math.max(1, #blockedActions - 4)
     for index = first, #blockedActions do
         local blocked = blockedActions[index]
-        Print(string.format("Blocked %d: %s %s at %s", index, blocked.event or "?", blocked.action or "?", blocked.time or "?"))
+        Print(string.format("Blocked %d: %s addon=%s action=%s at %s", index, blocked.event or "?", blocked.addon or "?", blocked.action or "?", blocked.time or "?"))
     end
 end
 
@@ -733,11 +734,11 @@ local function HandleSlash(input)
     rest = strtrim(rest or "")
 
     if command == "show" then
-        db.alwaysShow = true
+        forceShow = true
         UpdateDisplay()
         Print("Frame shown. Use /bp hide to return to Saprish-only display.")
     elseif command == "hide" then
-        db.alwaysShow = false
+        forceShow = false
         UpdateDisplay()
         Print("Frame will only show during Saprish tracking or /bp test.")
     elseif command == "lock" then
@@ -753,10 +754,8 @@ local function HandleSlash(input)
     elseif command == "start" then
         StartFight("Manual Saprish tracking started.")
     elseif command == "stop" or command == "clear" then
-        db.alwaysShow = false
         ResetFight("Tracking stopped.")
     elseif command == "test" and (rest == "stop" or rest == "clear" or rest == "reset") then
-        db.alwaysShow = false
         ResetFight("Test mode stopped.")
     elseif command == "test" then
         SimulateBleed()
@@ -783,6 +782,7 @@ local function OnEvent(self, event, ...)
         -- v0.1.1 migration: older builds saved "visible = true", which made the
         -- frame appear everywhere. Keep the new default Saprish-only behavior.
         db.visible = nil
+        db.alwaysShow = nil
 
     elseif event == "PLAYER_LOGIN" then
         if initialized then
@@ -801,7 +801,7 @@ local function OnEvent(self, event, ...)
             return
         end
 
-        if active or db.alwaysShow then
+        if active or forceShow then
             UpdateRoster()
         end
 
@@ -833,15 +833,14 @@ local function OnEvent(self, event, ...)
         HandleCombatLog()
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
         local addonName, blockedFunction = ...
-        if addonName == ADDON_NAME then
-            BleedPredictDB.blockedActions = BleedPredictDB.blockedActions or {}
-            BleedPredictDB.blockedActions[#BleedPredictDB.blockedActions + 1] = {
-                event = event,
-                action = tostring(blockedFunction),
-                time = date and date("%Y-%m-%d %H:%M:%S") or tostring(GetServerTime and GetServerTime() or GetTime()),
-            }
-            Print(event .. ": " .. tostring(blockedFunction) .. ". This was saved to BleedPredictDB.blockedActions.")
-        end
+        BleedPredictDB.blockedActions = BleedPredictDB.blockedActions or {}
+        BleedPredictDB.blockedActions[#BleedPredictDB.blockedActions + 1] = {
+            event = event,
+            addon = tostring(addonName),
+            action = tostring(blockedFunction),
+            time = date and date("%Y-%m-%d %H:%M:%S") or tostring(GetServerTime and GetServerTime() or GetTime()),
+        }
+        Print(event .. ": addon=" .. tostring(addonName) .. " action=" .. tostring(blockedFunction) .. ". Saved for /bp blocked.")
     end
 end
 
