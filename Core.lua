@@ -3,7 +3,7 @@ local ADDON_NAME = ...
 local BP = CreateFrame("Frame")
 
 local DB_DEFAULTS = {
-    debug = true,
+    debug = false,
     locked = false,
     point = { "CENTER", "CENTER", 0, 120 },
 }
@@ -35,9 +35,7 @@ local auraDebugLog = {}
 
 local frame
 local titleText
-local statusText
 local targetsText
-local historyText
 
 local function CopyDefaults(target, defaults)
     for key, value in pairs(defaults) do
@@ -395,7 +393,7 @@ local function CreateDisplay()
     end
 
     frame = CreateFrame("Frame", nil, UIParent)
-    frame:SetSize(230, 96)
+    frame:SetSize(230, 56)
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
@@ -423,13 +421,8 @@ local function CreateDisplay()
     titleText:SetPoint("TOPLEFT", 10, -8)
     titleText:SetText("Bleed Predict")
 
-    statusText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    statusText:SetPoint("TOPLEFT", titleText, "BOTTOMLEFT", 0, -5)
-    statusText:SetPoint("RIGHT", frame, "RIGHT", -10, 0)
-    statusText:SetJustifyH("LEFT")
-
     local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    label:SetPoint("TOPLEFT", statusText, "BOTTOMLEFT", 0, -8)
+    label:SetPoint("TOPLEFT", titleText, "BOTTOMLEFT", 0, -10)
     label:SetText("Next:")
 
     targetsText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -437,10 +430,6 @@ local function CreateDisplay()
     targetsText:SetPoint("RIGHT", frame, "RIGHT", -10, 0)
     targetsText:SetJustifyH("LEFT")
 
-    historyText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    historyText:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -8)
-    historyText:SetPoint("RIGHT", frame, "RIGHT", -10, 0)
-    historyText:SetJustifyH("LEFT")
 end
 
 local function UpdateDisplay()
@@ -459,30 +448,10 @@ local function UpdateDisplay()
 
     frame:Show()
 
-    if testMode then
-        statusText:SetText(string.format("Test mode - %d bleed%s seen", #history, #history == 1 and "" or "s"))
-    elseif active then
-        statusText:SetText(string.format("Saprish active - %d bleed%s seen", #history, #history == 1 and "" or "s"))
-    else
-        statusText:SetText("Waiting for Saprish")
-    end
-
     targetsText:SetText(FormatEntries(GetPossibleTargets()))
-
-    if #history == 0 then
-        historyText:SetText("|cffaaaaaaNo bleed targets detected yet|r")
-    else
-        local recent = {}
-        local first = math.max(1, #history - 4)
-        for index = first, #history do
-            local event = history[index]
-            recent[#recent + 1] = ColorizeName(event.name, event.classToken)
-        end
-        historyText:SetText("Last: " .. table.concat(recent, " > "))
-    end
 end
 
-local function StartTracking(reason, isTest)
+local function StartTracking(reason, isTest, quiet)
     active = true
     testMode = isTest or false
     history = {}
@@ -491,18 +460,22 @@ local function StartTracking(reason, isTest)
     UpdateRoster()
     SnapshotAuras()
     UpdateDisplay()
-    Print(reason or "Tracking started.")
+    if not quiet then
+        Print(reason or "Tracking started.")
+    end
     Debug("Possible next: " .. FormatEntries(GetPossibleTargets()))
 end
 
-local function StopTracking(reason)
+local function StopTracking(reason, quiet)
     active = false
     testMode = false
     history = {}
     lastDetectionTime = 0
     lastDetectionGUID = nil
     UpdateDisplay()
-    Print(reason or "Tracking stopped.")
+    if not quiet then
+        Print(reason or "Tracking stopped.")
+    end
 end
 
 local function FormatAuraDebug(entry, aura, prefix)
@@ -549,10 +522,10 @@ local function RecordPounce(guid, name, source, aura)
     lastDetectionGUID = guid
 
     Debug(string.format("Bleed #%d detected on %s via %s%s.",
-        #history,
-        ColorizeName(history[#history].name, history[#history].classToken),
-        source or "unknown",
-        aura and (" (" .. SafeString(SafeField(aura, "name"), "<secret-name>") .. "/" .. SafeString(SafeField(aura, "spellId", "?"), "?") .. ")") or ""))
+            #history,
+            ColorizeName(history[#history].name, history[#history].classToken),
+            source or "unknown",
+            aura and (" (" .. SafeString(SafeField(aura, "name"), "<secret-name>") .. "/" .. SafeString(SafeField(aura, "spellId", "?"), "?") .. ")") or ""))
 
     UpdateDisplay()
 end
@@ -660,7 +633,7 @@ local function SimulateBleed()
     end
 
     if not active then
-        StartTracking("Test mode started.", true)
+        StartTracking("Test mode started.", true, true)
     end
 
     local candidates = GetPossibleTargets()
@@ -713,7 +686,7 @@ local function PrintHelp()
     Print("/bp show - show the prediction box")
     Print("/bp hide - hide the prediction box outside Saprish")
     Print("/bp lock - lock or unlock dragging")
-    Print("/bp debug - toggle debug output")
+    Print("/bp debug - toggle diagnostic output")
     Print("/bp roster - show current group roles")
     Print("/bp auras - show current harmful non-tank auras")
     Print("/bp auradebug - show recent new aura diagnostics")
@@ -756,17 +729,17 @@ local function HandleSlash(input)
         Print("Possible next: " .. FormatEntries(GetPossibleTargets()))
         Print("Combat-log detection is disabled; this build uses UNIT_AURA only.")
     elseif input == "start" then
-        StartTracking("Manual aura-based tracking started.", false)
+        StartTracking("Manual aura-based tracking started.", false, false)
     elseif input == "stop" or input == "clear" then
-        StopTracking("Tracking stopped.")
+        StopTracking("Tracking stopped.", false)
     elseif input == "test" then
         SimulateBleed()
     elseif input == "test stop" or input == "test clear" or input == "test reset" then
-        StopTracking("Test mode stopped.")
+        StopTracking("Test mode stopped.", false)
     elseif input == "reset" then
         db.point = { "CENTER", "CENTER", 0, 120 }
         SetSavedFramePoint()
-        StopTracking("Position and tracking reset.")
+        StopTracking("Position and tracking reset.", false)
     elseif input == "blocked" then
         PrintBlockedActions()
     elseif input == "blocked clear" then
@@ -792,6 +765,7 @@ local function OnEvent(self, event, ...)
         BleedPredictDB = BleedPredictDB or {}
         db = BleedPredictDB
         CopyDefaults(db, DB_DEFAULTS)
+        db.debug = false
         db.visible = nil
         db.alwaysShow = nil
         loaded = true
@@ -805,8 +779,6 @@ local function OnEvent(self, event, ...)
         SLASH_BLEEDPREDICT2 = "/bleedpredict"
         SlashCmdList.BLEEDPREDICT = HandleSlash
 
-        Print("Loaded. Type /bp for commands.")
-
     elseif event == "PLAYER_ENTERING_WORLD" or event == "GROUP_ROSTER_UPDATE" or event == "ROLE_CHANGED_INFORM" then
         UpdateRoster()
         if active then
@@ -818,14 +790,14 @@ local function OnEvent(self, event, ...)
         local encounterID, newEncounterName = ...
         if IsSaprishName(newEncounterName) then
             encounterName = newEncounterName
-            StartTracking("Saprish encounter started: " .. tostring(newEncounterName) .. " (" .. tostring(encounterID) .. ").", false)
+            StartTracking(nil, false, true)
         end
 
     elseif event == "ENCOUNTER_END" then
         local encounterID, endedEncounterName = ...
         if active and IsSaprishName(endedEncounterName) then
             encounterName = endedEncounterName
-            StopTracking("Saprish encounter ended: " .. tostring(endedEncounterName) .. " (" .. tostring(encounterID) .. ").")
+            StopTracking(nil, true)
         end
 
     elseif event == "UNIT_AURA" then
@@ -846,7 +818,6 @@ local function OnEvent(self, event, ...)
             action = tostring(blockedFunction),
             time = date and date("%Y-%m-%d %H:%M:%S") or tostring(GetTime()),
         }
-        Print(event .. ": addon=" .. tostring(addonName) .. " action=" .. tostring(blockedFunction) .. ". Saved for /bp blocked.")
     end
 end
 
