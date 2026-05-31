@@ -12,6 +12,10 @@ local SAPRISH_NAMES = {
     ["saprish"] = true,
 }
 
+local SHADOW_POUNCE_AURA_IDS = {
+    [245742] = true,
+}
+
 local DETECTION_COOLDOWN_SECONDS = 2.0
 local CLASS_COLORS = CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS
 
@@ -31,6 +35,7 @@ local lastDetectionGUID = nil
 local roster = {}
 local auraCache = {}
 local history = {}
+local auraDebugLog = {}
 
 local frame
 local titleText
@@ -91,6 +96,18 @@ end
 local function IsSaprishName(name)
     name = name and string.lower(name)
     return name and SAPRISH_NAMES[name]
+end
+
+local function IsShadowPounceAura(aura)
+    if not aura then
+        return false
+    end
+
+    if aura.spellId and SHADOW_POUNCE_AURA_IDS[aura.spellId] then
+        return true
+    end
+
+    return aura.name and string.lower(aura.name) == "shadow pounce"
 end
 
 local function IsDisplayWanted()
@@ -204,16 +221,24 @@ local function AuraKey(aura)
     return string.format("spell:%s:%s", tostring(aura.spellId or 0), tostring(aura.name or ""))
 end
 
-local function IsIgnoredAura(aura)
+local function GetIgnoredAuraReason(aura)
     if not aura or not aura.name then
-        return true
+        return "missing-name"
     end
 
     if aura.sourceUnit and UnitIsPlayer(aura.sourceUnit) then
-        return true
+        return "player-source"
     end
 
-    return false
+    return nil
+end
+
+local function AddAuraDebug(message)
+    auraDebugLog[#auraDebugLog + 1] = message
+    if #auraDebugLog > 20 then
+        table.remove(auraDebugLog, 1)
+    end
+    Debug(message)
 end
 
 local function UpdateAuraCacheForUnit(unit)
@@ -436,6 +461,17 @@ local function StopTracking(reason)
     Print(reason or "Tracking stopped.")
 end
 
+local function FormatAuraDebug(entry, aura, prefix)
+    return string.format("%s %s aura=%s/%s source=%s duration=%s expires=%s",
+        prefix or "Aura",
+        ShortName(entry.name) or "unknown",
+        tostring(aura and aura.name or "unknown"),
+        tostring(aura and aura.spellId or "?"),
+        tostring(aura and aura.sourceUnit or "nil"),
+        tostring(aura and aura.duration or "nil"),
+        tostring(aura and aura.expirationTime or "nil"))
+end
+
 local function RecordPounce(guid, name, source, aura)
     if not guid then
         return
@@ -483,6 +519,7 @@ local function ScanForNewAuras(source)
     end
 
     local candidates = {}
+    local pounceCandidates = {}
 
     for _, entry in ipairs(GetNonTanks()) do
         local unit = entry.unit
@@ -499,12 +536,21 @@ local function ScanForNewAuras(source)
             local key = AuraKey(aura)
             local isNew = key and not cache[key]
 
-            if isNew and not IsIgnoredAura(aura) then
-                candidates[#candidates + 1] = {
+            if isNew then
+                local ignoredReason = GetIgnoredAuraReason(aura)
+                local candidate = {
                     guid = guid,
                     name = entry.name,
                     aura = aura,
                 }
+
+                AddAuraDebug(FormatAuraDebug(entry, aura, ignoredReason and ("New ignored(" .. ignoredReason .. ")") or "New candidate"))
+
+                if IsShadowPounceAura(aura) then
+                    pounceCandidates[#pounceCandidates + 1] = candidate
+                elseif not ignoredReason then
+                    candidates[#candidates + 1] = candidate
+                end
             end
 
             if key then
@@ -513,7 +559,12 @@ local function ScanForNewAuras(source)
         end
     end
 
-    if #candidates == 1 then
+    if #pounceCandidates == 1 then
+        local candidate = pounceCandidates[1]
+        RecordPounce(candidate.guid, candidate.name, source or "Shadow Pounce aura", candidate.aura)
+    elseif #pounceCandidates > 1 then
+        Debug("Multiple Shadow Pounce-looking auras seen; not choosing automatically.")
+    elseif #candidates == 1 then
         local candidate = candidates[1]
         RecordPounce(candidate.guid, candidate.name, source or "new harmful aura", candidate.aura)
     elseif #candidates > 1 then
@@ -525,6 +576,36 @@ local function ScanForNewAuras(source)
                 tostring(candidate.aura.spellId or "?"))
         end
         Debug("Multiple new harmful auras seen; not choosing automatically: " .. table.concat(names, ", "))
+    end
+end
+
+local function PrintCurrentAuras()
+    local any = false
+    for _, entry in ipairs(GetNonTanks()) do
+        for index = 1, 40 do
+            local aura = GetAuraData(entry.unit, index)
+            if not aura then
+                break
+            end
+
+            any = true
+            Print(FormatAuraDebug(entry, aura, "Current"))
+        end
+    end
+
+    if not any then
+        Print("No harmful auras visible on non-tanks.")
+    end
+end
+
+local function PrintAuraDebugLog()
+    if #auraDebugLog == 0 then
+        Print("No aura debug entries recorded.")
+        return
+    end
+
+    for index, message in ipairs(auraDebugLog) do
+        Print(index .. ": " .. message)
     end
 end
 
@@ -590,6 +671,8 @@ local function PrintHelp()
     Print("/bp lock - lock or unlock dragging")
     Print("/bp debug - toggle debug output")
     Print("/bp roster - show current group roles")
+    Print("/bp auras - show current harmful non-tank auras")
+    Print("/bp auradebug - show recent new aura diagnostics")
     Print("/bp status - show addon state")
     Print("/bp start - manually start aura-based tracking")
     Print("/bp stop - stop tracking")
@@ -618,6 +701,10 @@ local function HandleSlash(input)
         Print(db.debug and "Debug output ON." or "Debug output OFF.")
     elseif input == "roster" then
         PrintRoster()
+    elseif input == "auras" then
+        PrintCurrentAuras()
+    elseif input == "auradebug" then
+        PrintAuraDebugLog()
     elseif input == "status" then
         Print("Loaded: " .. tostring(loaded) .. ", logged in: " .. tostring(loggedIn) .. ", active: " .. tostring(active) .. ", test: " .. tostring(testMode))
         Print("Encounter: " .. tostring(encounterName or "none") .. ", Saprish boss unit seen: " .. tostring(bossUnitSeen))

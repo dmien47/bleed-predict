@@ -4,7 +4,7 @@ Bleed Predict is a small Retail World of Warcraft addon for the Saprish encounte
 
 ## Current Diagnostic Build
 
-Version `0.2.0-aura-ui` is a testable aura-only build with the prediction UI restored.
+Version `0.2.1-aura-debug` is a testable aura-only build with the prediction UI restored.
 
 The active `Core.lua` currently loads only:
 
@@ -18,6 +18,7 @@ The active `Core.lua` currently loads only:
 - Saprish encounter start/end and boss-unit detection
 - Combat-log diagnostics are disabled because this client forbids `COMBAT_LOG_EVENT_UNFILTERED` registration from this addon.
 - Bleed detection now uses Saprish-gated `UNIT_AURA` scanning for new harmful non-player debuffs.
+- `/bp auras` and `/bp auradebug` help inspect what harmful auras the client exposes during Saprish.
 - Prediction state and manual `/bleedpredict test`
 - `ADDON_ACTION_BLOCKED` and `ADDON_ACTION_FORBIDDEN` diagnostics
 
