@@ -2,6 +2,8 @@
 
 Bleed Predict is a small Retail World of Warcraft addon for the Saprish encounter in Seat of the Triumvirate. It shows the possible next Shadow Pounce bleed targets in a movable box, using class-colored character names.
 
+The box is hidden by default. It appears automatically when Saprish tracking starts, or when you manually show/test it.
+
 ## How It Predicts
 
 The addon keeps an ordered history of detected Shadow Pounce bleed targets.
@@ -73,6 +75,8 @@ README.md
 Useful first checks:
 
 - `/bp test` simulates a bleed using your current non-tank roster so you can verify the box and prediction order before entering the dungeon.
+- `/bp show` keeps the box visible outside Saprish.
+- `/bp hide` returns the box to Saprish-only visibility.
 - `/bp debug` toggles chat logging.
 - `/bp status` prints the detected non-tank roster and current possible targets.
 - Drag the box with left mouse while it is unlocked.

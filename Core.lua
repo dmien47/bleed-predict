@@ -6,7 +6,7 @@ _G.BleedPredict = BP
 local DB_DEFAULTS = {
     debug = true,
     locked = false,
-    visible = true,
+    alwaysShow = false,
     point = { "CENTER", "CENTER", 0, 120 },
 }
 
@@ -30,6 +30,7 @@ local statusText
 local targetsText
 local historyText
 
+local initialized = false
 local active = false
 local pounceWindowUntil = 0
 local roster = {}
@@ -341,12 +342,12 @@ local function UpdateDisplay()
         return
     end
 
-    if db.visible then
-        frame:Show()
-    else
+    if not active and not db.alwaysShow then
         frame:Hide()
         return
     end
+
+    frame:Show()
 
     local candidates = GetPossibleTargets()
     local status
@@ -383,7 +384,6 @@ local function ResetFight(reason)
     lastDetectionTime = 0
     lastDetectionGUID = nil
     pendingDamage = {}
-    SnapshotAuras()
     UpdateDisplay()
 
     if reason then
@@ -649,7 +649,7 @@ end
 
 local function PrintHelp()
     Print("/bp show - show the prediction box")
-    Print("/bp hide - hide the prediction box")
+    Print("/bp hide - hide the prediction box outside Saprish")
     Print("/bp lock - lock or unlock dragging")
     Print("/bp debug - toggle debug chat output")
     Print("/bp reset - reset position and fight history")
@@ -686,11 +686,13 @@ local function HandleSlash(input)
     input = string.lower(strtrim(input or ""))
 
     if input == "show" then
-        db.visible = true
+        db.alwaysShow = true
         UpdateDisplay()
+        Print("Frame shown. Use /bp hide to return to Saprish-only display.")
     elseif input == "hide" then
-        db.visible = false
+        db.alwaysShow = false
         UpdateDisplay()
+        Print("Frame will only show during Saprish tracking or /bp test.")
     elseif input == "lock" then
         db.locked = not db.locked
         Print(db.locked and "Frame locked." or "Frame unlocked. Drag it with left mouse.")
@@ -725,9 +727,17 @@ local function OnEvent(self, event, ...)
         db = BleedPredictDB
         CopyDefaults(db, DB_DEFAULTS)
 
+        -- v0.1.1 migration: older builds saved "visible = true", which made the
+        -- frame appear everywhere. Keep the new default Saprish-only behavior.
+        db.visible = nil
+
+    elseif event == "PLAYER_LOGIN" then
+        if initialized then
+            return
+        end
+
+        initialized = true
         CreateDisplay()
-        UpdateRoster()
-        SnapshotAuras()
         UpdateDisplay()
 
         SLASH_BLEEDPREDICT1 = "/bp"
@@ -736,8 +746,14 @@ local function OnEvent(self, event, ...)
 
         Print("Loaded. Type /bp for commands.")
     elseif event == "PLAYER_ENTERING_WORLD" or event == "GROUP_ROSTER_UPDATE" or event == "ROLE_CHANGED_INFORM" then
-        UpdateRoster()
-        SnapshotAuras()
+        if not initialized then
+            return
+        end
+
+        if active or db.alwaysShow then
+            UpdateRoster()
+        end
+
         UpdateDisplay()
     elseif event == "ENCOUNTER_START" then
         local encounterID, encounterName = ...
@@ -761,8 +777,6 @@ local function OnEvent(self, event, ...)
         local unit = ...
         if active and unit and UnitExists(unit) then
             BP:ScanForPounceAuras("new harmful aura")
-        elseif unit then
-            UpdateAuraCacheForUnit(unit)
         end
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
         HandleCombatLog()
@@ -771,6 +785,7 @@ end
 
 BP:SetScript("OnEvent", OnEvent)
 BP:RegisterEvent("ADDON_LOADED")
+BP:RegisterEvent("PLAYER_LOGIN")
 BP:RegisterEvent("PLAYER_ENTERING_WORLD")
 BP:RegisterEvent("GROUP_ROSTER_UPDATE")
 BP:RegisterEvent("ROLE_CHANGED_INFORM")
