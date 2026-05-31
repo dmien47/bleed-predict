@@ -8,11 +8,6 @@ local blockedCount = 0
 local encounterActive = false
 local encounterName = nil
 local bossUnitSeen = false
-local combatLogEventRegistered = false
-local combatLogListening = false
-local manualCombatLog = false
-local shadowPounceEvents = 0
-local lastShadowPounceEvent = nil
 local trackingActive = false
 local testMode = false
 local history = {}
@@ -22,10 +17,6 @@ local CLASS_COLORS = CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS
 
 local SAPRISH_NAMES = {
     ["saprish"] = true,
-}
-
-local SHADOW_POUNCE_SPELL_IDS = {
-    [245742] = true,
 }
 
 local function Print(message)
@@ -60,10 +51,6 @@ end
 local function IsSaprishName(name)
     name = name and string.lower(name)
     return name and SAPRISH_NAMES[name]
-end
-
-local function IsShadowPounceSpell(spellID)
-    return spellID and SHADOW_POUNCE_SPELL_IDS[spellID]
 end
 
 local function UnitIterator()
@@ -273,26 +260,6 @@ local function PrintRoster()
     Print("Roster: " .. table.concat(names, ", "))
 end
 
-local function SetCombatLogListening(enabled, reason)
-    if enabled and not combatLogListening then
-        combatLogListening = true
-        Print("Combat-log diagnostics listening" .. (reason and (" (" .. reason .. ").") or "."))
-    elseif not enabled and combatLogListening then
-        combatLogListening = false
-        Print("Combat-log diagnostics paused" .. (reason and (" (" .. reason .. ").") or "."))
-    end
-end
-
-local function RegisterCombatLogEvent(reason)
-    if combatLogEventRegistered then
-        return
-    end
-
-    BP:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-    combatLogEventRegistered = true
-    Print("Combat-log event registered" .. (reason and (" (" .. reason .. ").") or "."))
-end
-
 local function HandleSlash(input)
     input = string.lower(strtrim(input or ""))
 
@@ -305,36 +272,22 @@ local function HandleSlash(input)
         Print("Roster units tracked: " .. tostring(#roster))
         Print("Encounter active: " .. tostring(encounterActive) .. " " .. tostring(encounterName or ""))
         Print("Saprish boss unit seen: " .. tostring(bossUnitSeen))
-        Print("Combat-log event registered: " .. tostring(combatLogEventRegistered))
-        Print("Combat-log listening: " .. tostring(combatLogListening))
-        Print("Manual combat-log mode: " .. tostring(manualCombatLog))
+        Print("Combat-log available: false")
         Print("Tracking active: " .. tostring(trackingActive))
         Print("Test mode: " .. tostring(testMode))
         Print("Bleeds recorded: " .. tostring(#history))
-        Print("Shadow Pounce combat-log events seen: " .. tostring(shadowPounceEvents))
-        Print("Last Shadow Pounce event: " .. tostring(lastShadowPounceEvent or "none"))
         Print("Possible next: " .. FormatEntries(GetPossibleTargets()))
         Print("No UI or aura scanning is loaded.")
     elseif input == "roster" then
         PrintRoster()
     elseif input == "cleu on" then
-        manualCombatLog = true
-        SetCombatLogListening(true, "manual")
+        Print("Combat-log diagnostics are disabled because this client forbids registering COMBAT_LOG_EVENT_UNFILTERED.")
     elseif input == "cleu off" then
-        manualCombatLog = false
-        if not encounterActive then
-            SetCombatLogListening(false, "manual")
-        else
-            Print("Combat-log diagnostics remain enabled because the Saprish encounter is active.")
-        end
+        Print("Combat-log diagnostics are already disabled.")
     elseif input == "start" then
         StartTracking("Manual tracking started.", false)
-        SetCombatLogListening(true, "manual tracking")
     elseif input == "stop" or input == "clear" then
         StopTracking("Tracking stopped.")
-        if not encounterActive and not manualCombatLog then
-            SetCombatLogListening(false, "tracking stopped")
-        end
     elseif input == "test" then
         SimulateBleed()
     elseif input == "test stop" or input == "test clear" or input == "test reset" then
@@ -365,8 +318,7 @@ local function HandleSlash(input)
     else
         Print("/bleedpredict status - show event-core diagnostic status")
         Print("/bleedpredict roster - show current group roles")
-        Print("/bleedpredict cleu on - manually enable combat-log diagnostics")
-        Print("/bleedpredict cleu off - manually disable combat-log diagnostics")
+        Print("/bleedpredict cleu on - explain why combat-log diagnostics are disabled")
         Print("/bleedpredict start - manually start tracking")
         Print("/bleedpredict stop - stop tracking")
         Print("/bleedpredict test - simulate a bleed")
@@ -394,11 +346,6 @@ local function OnEvent(self, event, ...)
         UpdateRoster()
         SLASH_BLEEDPREDICT1 = "/bleedpredict"
         SlashCmdList.BLEEDPREDICT = HandleSlash
-        if C_Timer and C_Timer.After then
-            C_Timer.After(3, function()
-                RegisterCombatLogEvent("deferred after login")
-            end)
-        end
     elseif event == "PLAYER_ENTERING_WORLD" or event == "GROUP_ROSTER_UPDATE" or event == "ROLE_CHANGED_INFORM" then
         UpdateRoster()
     elseif event == "ENCOUNTER_START" then
@@ -412,7 +359,6 @@ local function OnEvent(self, event, ...)
             UpdateRoster()
             Print("Saprish encounter started: " .. tostring(newEncounterName) .. " (" .. tostring(encounterID) .. ").")
             Print("Possible next: " .. FormatEntries(GetPossibleTargets()))
-            SetCombatLogListening(true, "Saprish encounter")
         end
     elseif event == "ENCOUNTER_END" then
         local encounterID, endedEncounterName = ...
@@ -422,9 +368,6 @@ local function OnEvent(self, event, ...)
             testMode = false
             encounterName = endedEncounterName
             Print("Saprish encounter ended: " .. tostring(endedEncounterName) .. " (" .. tostring(encounterID) .. ").")
-            if not manualCombatLog then
-                SetCombatLogListening(false, "Saprish encounter ended")
-            end
         end
     elseif event == "INSTANCE_ENCOUNTER_ENGAGE_UNIT" then
         for index = 1, 5 do
@@ -432,28 +375,7 @@ local function OnEvent(self, event, ...)
             if UnitExists(unit) and IsSaprishName(UnitName(unit)) then
                 bossUnitSeen = true
                 Print("Saprish boss unit seen: " .. tostring(unit) .. ".")
-                SetCombatLogListening(true, "Saprish boss unit")
                 break
-            end
-        end
-    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
-        if not combatLogListening then
-            return
-        end
-
-        local timestamp, subevent, _, sourceGUID, sourceName, _, _, destGUID, destName, _, _, spellID, spellName = CombatLogGetCurrentEventInfo()
-
-        if IsShadowPounceSpell(spellID) then
-            shadowPounceEvents = shadowPounceEvents + 1
-            lastShadowPounceEvent = string.format("%s %s -> %s (%s)",
-                subevent or "?",
-                tostring(spellName or spellID),
-                tostring(destName or "no target"),
-                tostring(spellID))
-            Print("Shadow Pounce combat log: " .. lastShadowPounceEvent)
-
-            if trackingActive and (subevent == "SPELL_AURA_APPLIED" or subevent == "SPELL_DAMAGE") and IsKnownPartyGUID(destGUID) then
-                RecordPounce(destGUID, destName, subevent)
             end
         end
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
