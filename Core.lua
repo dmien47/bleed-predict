@@ -94,8 +94,32 @@ local function ColorizeName(name, classToken)
 end
 
 local function IsSaprishName(name)
-    name = name and string.lower(name)
-    return name and SAPRISH_NAMES[name]
+    if type(name) ~= "string" then
+        return false
+    end
+
+    local ok, lowered = pcall(string.lower, name)
+    return ok and lowered and SAPRISH_NAMES[lowered] or false
+end
+
+local function SafeString(value, fallback)
+    local ok, result = pcall(tostring, value)
+    if ok then
+        return result
+    end
+
+    return fallback or "<secret>"
+end
+
+local function SafeLower(value)
+    if type(value) ~= "string" then
+        return nil
+    end
+
+    local ok, lowered = pcall(string.lower, value)
+    if ok then
+        return lowered
+    end
 end
 
 local function IsShadowPounceAura(aura)
@@ -103,11 +127,12 @@ local function IsShadowPounceAura(aura)
         return false
     end
 
-    if aura.spellId and SHADOW_POUNCE_AURA_IDS[aura.spellId] then
+    local ok, spellID = pcall(function() return aura.spellId end)
+    if ok and spellID and SHADOW_POUNCE_AURA_IDS[spellID] then
         return true
     end
 
-    return aura.name and string.lower(aura.name) == "shadow pounce"
+    return SafeLower(aura.name) == "shadow pounce"
 end
 
 local function IsDisplayWanted()
@@ -215,10 +240,10 @@ local function AuraKey(aura)
     end
 
     if aura.auraInstanceID then
-        return "instance:" .. tostring(aura.auraInstanceID)
+        return "instance:" .. SafeString(aura.auraInstanceID, "unknown")
     end
 
-    return string.format("spell:%s:%s", tostring(aura.spellId or 0), tostring(aura.name or ""))
+    return string.format("spell:%s:%s", SafeString(aura.spellId or 0, "0"), SafeString(aura.name or "", ""))
 end
 
 local function GetIgnoredAuraReason(aura)
@@ -226,7 +251,7 @@ local function GetIgnoredAuraReason(aura)
         return "missing-name"
     end
 
-    if aura.sourceUnit and UnitIsPlayer(aura.sourceUnit) then
+    if aura.isFromPlayerOrPlayerPet then
         return "player-source"
     end
 
@@ -465,11 +490,11 @@ local function FormatAuraDebug(entry, aura, prefix)
     return string.format("%s %s aura=%s/%s source=%s duration=%s expires=%s",
         prefix or "Aura",
         ShortName(entry.name) or "unknown",
-        tostring(aura and aura.name or "unknown"),
-        tostring(aura and aura.spellId or "?"),
-        tostring(aura and aura.sourceUnit or "nil"),
-        tostring(aura and aura.duration or "nil"),
-        tostring(aura and aura.expirationTime or "nil"))
+        SafeString(aura and aura.name or "unknown", "<secret-name>"),
+        SafeString(aura and aura.spellId or "?", "?"),
+        SafeString(aura and aura.sourceUnit or "nil", "<secret-source>"),
+        SafeString(aura and aura.duration or "nil", "nil"),
+        SafeString(aura and aura.expirationTime or "nil", "nil"))
 end
 
 local function RecordPounce(guid, name, source, aura)
@@ -497,7 +522,7 @@ local function RecordPounce(guid, name, source, aura)
         guid = guid,
         name = name or (entry and entry.name) or "Unknown",
         classToken = entry and entry.classToken,
-        auraName = aura and aura.name,
+        auraName = aura and SafeString(aura.name, "<secret-name>"),
         auraSpellID = aura and aura.spellId,
     }
 
@@ -508,7 +533,7 @@ local function RecordPounce(guid, name, source, aura)
         #history,
         ColorizeName(history[#history].name, history[#history].classToken),
         source or "unknown",
-        aura and (" (" .. tostring(aura.name) .. "/" .. tostring(aura.spellId or "?") .. ")") or ""))
+        aura and (" (" .. SafeString(aura.name, "<secret-name>") .. "/" .. SafeString(aura.spellId or "?", "?") .. ")") or ""))
 
     UpdateDisplay()
 end
@@ -572,8 +597,8 @@ local function ScanForNewAuras(source)
         for _, candidate in ipairs(candidates) do
             names[#names + 1] = string.format("%s:%s/%s",
                 ShortName(candidate.name) or "unknown",
-                candidate.aura.name or "unknown",
-                tostring(candidate.aura.spellId or "?"))
+                SafeString(candidate.aura.name or "unknown", "<secret-name>"),
+                SafeString(candidate.aura.spellId or "?", "?"))
         end
         Debug("Multiple new harmful auras seen; not choosing automatically: " .. table.concat(names, ", "))
     end
@@ -784,18 +809,6 @@ local function OnEvent(self, event, ...)
             StopTracking("Saprish encounter ended: " .. tostring(endedEncounterName) .. " (" .. tostring(encounterID) .. ").")
         end
 
-    elseif event == "INSTANCE_ENCOUNTER_ENGAGE_UNIT" then
-        for index = 1, 5 do
-            local unit = "boss" .. index
-            if UnitExists(unit) and IsSaprishName(UnitName(unit)) then
-                bossUnitSeen = true
-                if not active then
-                    StartTracking("Saprish boss unit seen: " .. tostring(unit) .. ".", false)
-                end
-                break
-            end
-        end
-
     elseif event == "UNIT_AURA" then
         local unit = ...
         if active and unit and UnitExists(unit) then
@@ -826,7 +839,6 @@ BP:RegisterEvent("GROUP_ROSTER_UPDATE")
 BP:RegisterEvent("ROLE_CHANGED_INFORM")
 BP:RegisterEvent("ENCOUNTER_START")
 BP:RegisterEvent("ENCOUNTER_END")
-BP:RegisterEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT")
 BP:RegisterEvent("UNIT_AURA")
 BP:RegisterEvent("ADDON_ACTION_BLOCKED")
 BP:RegisterEvent("ADDON_ACTION_FORBIDDEN")

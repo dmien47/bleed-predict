@@ -4,7 +4,7 @@ Bleed Predict is a small Retail World of Warcraft addon for the Saprish encounte
 
 ## Current Diagnostic Build
 
-Version `0.2.1-aura-debug` is a testable aura-only build with the prediction UI restored.
+Version `0.2.3-secret-aura-fix` is a testable aura-only build with the prediction UI restored.
 
 The active `Core.lua` currently loads only:
 
