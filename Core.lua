@@ -8,12 +8,18 @@ local blockedCount = 0
 local encounterActive = false
 local encounterName = nil
 local bossUnitSeen = false
+local shadowPounceEvents = 0
+local lastShadowPounceEvent = nil
 local roster = {}
 
 local CLASS_COLORS = CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS
 
 local SAPRISH_NAMES = {
     ["saprish"] = true,
+}
+
+local SHADOW_POUNCE_SPELL_IDS = {
+    [245742] = true,
 }
 
 local function Print(message)
@@ -48,6 +54,10 @@ end
 local function IsSaprishName(name)
     name = name and string.lower(name)
     return name and SAPRISH_NAMES[name]
+end
+
+local function IsShadowPounceSpell(spellID)
+    return spellID and SHADOW_POUNCE_SPELL_IDS[spellID]
 end
 
 local function UnitIterator()
@@ -118,7 +128,9 @@ local function HandleSlash(input)
         Print("Roster units tracked: " .. tostring(#roster))
         Print("Encounter active: " .. tostring(encounterActive) .. " " .. tostring(encounterName or ""))
         Print("Saprish boss unit seen: " .. tostring(bossUnitSeen))
-        Print("No UI, combat-log tracking, or aura scanning is loaded.")
+        Print("Shadow Pounce combat-log events seen: " .. tostring(shadowPounceEvents))
+        Print("Last Shadow Pounce event: " .. tostring(lastShadowPounceEvent or "none"))
+        Print("No UI or aura scanning is loaded.")
     elseif input == "roster" then
         PrintRoster()
     elseif input == "blocked" then
@@ -188,6 +200,18 @@ local function OnEvent(self, event, ...)
                 break
             end
         end
+    elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
+        local timestamp, subevent, _, sourceGUID, sourceName, _, _, destGUID, destName, _, _, spellID, spellName = CombatLogGetCurrentEventInfo()
+
+        if IsShadowPounceSpell(spellID) then
+            shadowPounceEvents = shadowPounceEvents + 1
+            lastShadowPounceEvent = string.format("%s %s -> %s (%s)",
+                subevent or "?",
+                tostring(spellName or spellID),
+                tostring(destName or "no target"),
+                tostring(spellID))
+            Print("Shadow Pounce combat log: " .. lastShadowPounceEvent)
+        end
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
         local addonName, blockedFunction = ...
         BleedPredictDB = BleedPredictDB or {}
@@ -213,5 +237,6 @@ BP:RegisterEvent("ROLE_CHANGED_INFORM")
 BP:RegisterEvent("ENCOUNTER_START")
 BP:RegisterEvent("ENCOUNTER_END")
 BP:RegisterEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT")
+BP:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 BP:RegisterEvent("ADDON_ACTION_BLOCKED")
 BP:RegisterEvent("ADDON_ACTION_FORBIDDEN")

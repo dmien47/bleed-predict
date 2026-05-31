@@ -4,7 +4,7 @@ Bleed Predict is a small Retail World of Warcraft addon for the Saprish encounte
 
 ## Current Diagnostic Build
 
-Version `0.1.10-encounter` is intentionally stripped down to diagnose a Blizzard blocked-action popup.
+Version `0.1.11-combatlog` is intentionally stripped down to diagnose a Blizzard blocked-action popup.
 
 The active `Core.lua` currently loads only:
 
@@ -15,9 +15,10 @@ The active `Core.lua` currently loads only:
 - A basic event frame for `ADDON_LOADED` and `PLAYER_LOGIN`
 - Group roster and role events
 - Saprish encounter start/end and boss-unit detection
+- Diagnostic Shadow Pounce combat-log watching
 - `ADDON_ACTION_BLOCKED` and `ADDON_ACTION_FORBIDDEN` diagnostics
 
-It does not load the prediction UI, movement, combat-log tracking, or aura scanning. The previous full implementation is parked in `Core.full.lua` while this is being isolated.
+It does not load the prediction UI, movement, or aura scanning. The previous full implementation is parked in `Core.full.lua` while this is being isolated.
 
 Test this version with only Bleed Predict enabled:
 
