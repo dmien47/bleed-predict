@@ -2,7 +2,7 @@
 ## Title: Bleed Predict
 ## Notes: Predicts possible Shadow Pounce bleed targets on Saprish in Seat of the Triumvirate.
 ## Author: Damien + Codex
-## Version: 0.1.6-zero-frame
+## Version: 0.1.7-event-core
 ## SavedVariables: BleedPredictDB
 
 Core.lua

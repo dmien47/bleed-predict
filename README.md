@@ -4,21 +4,21 @@ Bleed Predict is a small Retail World of Warcraft addon for the Saprish encounte
 
 ## Current Diagnostic Build
 
-Version `0.1.6-zero-frame` is intentionally stripped down to diagnose a Blizzard blocked-action popup.
+Version `0.1.7-event-core` is intentionally stripped down to diagnose a Blizzard blocked-action popup.
 
 The active `Core.lua` currently loads only:
 
 - Saved variables
 - `/bleedpredict status`
-- `/bleedpredict blocked`
+- A basic event frame for `ADDON_LOADED` and `PLAYER_LOGIN`
 
-It does not create any frames or register any events. It also does not load the prediction UI, movement, encounter tracking, combat-log tracking, or aura scanning. The previous full implementation is parked in `Core.full.lua` while this is being isolated.
+It does not load the prediction UI, movement, encounter tracking, combat-log tracking, aura scanning, or blocked-action diagnostics. The previous full implementation is parked in `Core.full.lua` while this is being isolated.
 
 Test this version with only Bleed Predict enabled:
 
 1. Copy `BleedPredict.toc`, `Core.lua`, and `Core.full.lua` into the addon folder.
 2. Run `/reload`.
-3. If the popup still appears, it is happening even with a zero-frame addon loaded.
+3. If the popup still appears, the basic event frame or load/login handling is enough to trigger it.
 
 The box is hidden by default. It appears automatically when Saprish tracking starts, or when you manually show/test it.
 
