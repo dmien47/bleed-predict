@@ -12,10 +12,6 @@ local SAPRISH_NAMES = {
     ["saprish"] = true,
 }
 
-local SHADOW_POUNCE_AURA_IDS = {
-    [245742] = true,
-}
-
 local DETECTION_COOLDOWN_SECONDS = 2.0
 local CLASS_COLORS = CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS
 
@@ -111,6 +107,22 @@ local function SafeString(value, fallback)
     return fallback or "<secret>"
 end
 
+local function SafeField(tableValue, key, fallback)
+    if not tableValue then
+        return fallback
+    end
+
+    local ok, result = pcall(function()
+        return tableValue[key]
+    end)
+
+    if ok and result ~= nil then
+        return result
+    end
+
+    return fallback
+end
+
 local function SafeLower(value)
     if type(value) ~= "string" then
         return nil
@@ -127,12 +139,16 @@ local function IsShadowPounceAura(aura)
         return false
     end
 
-    local ok, spellID = pcall(function() return aura.spellId end)
-    if ok and spellID and SHADOW_POUNCE_AURA_IDS[spellID] then
+    local spellID = SafeField(aura, "spellId")
+    local ok, isShadowPounceID = pcall(function()
+        return spellID == 245742
+    end)
+
+    if ok and isShadowPounceID then
         return true
     end
 
-    return SafeLower(aura.name) == "shadow pounce"
+    return SafeLower(SafeField(aura, "name")) == "shadow pounce"
 end
 
 local function IsDisplayWanted()
@@ -239,19 +255,22 @@ local function AuraKey(aura)
         return nil
     end
 
-    if aura.auraInstanceID then
-        return "instance:" .. SafeString(aura.auraInstanceID, "unknown")
+    local auraInstanceID = SafeField(aura, "auraInstanceID")
+    if auraInstanceID then
+        return "instance:" .. SafeString(auraInstanceID, "unknown")
     end
 
-    return string.format("spell:%s:%s", SafeString(aura.spellId or 0, "0"), SafeString(aura.name or "", ""))
+    return string.format("spell:%s:%s",
+        SafeString(SafeField(aura, "spellId", 0), "0"),
+        SafeString(SafeField(aura, "name", ""), ""))
 end
 
 local function GetIgnoredAuraReason(aura)
-    if not aura or not aura.name then
+    if not aura or not SafeField(aura, "name") then
         return "missing-name"
     end
 
-    if aura.isFromPlayerOrPlayerPet then
+    if SafeField(aura, "isFromPlayerOrPlayerPet", false) then
         return "player-source"
     end
 
@@ -490,11 +509,11 @@ local function FormatAuraDebug(entry, aura, prefix)
     return string.format("%s %s aura=%s/%s source=%s duration=%s expires=%s",
         prefix or "Aura",
         ShortName(entry.name) or "unknown",
-        SafeString(aura and aura.name or "unknown", "<secret-name>"),
-        SafeString(aura and aura.spellId or "?", "?"),
-        SafeString(aura and aura.sourceUnit or "nil", "<secret-source>"),
-        SafeString(aura and aura.duration or "nil", "nil"),
-        SafeString(aura and aura.expirationTime or "nil", "nil"))
+        SafeString(SafeField(aura, "name", "unknown"), "<secret-name>"),
+        SafeString(SafeField(aura, "spellId", "?"), "?"),
+        SafeString(SafeField(aura, "sourceUnit", "nil"), "<secret-source>"),
+        SafeString(SafeField(aura, "duration", "nil"), "nil"),
+        SafeString(SafeField(aura, "expirationTime", "nil"), "nil"))
 end
 
 local function RecordPounce(guid, name, source, aura)
@@ -522,8 +541,8 @@ local function RecordPounce(guid, name, source, aura)
         guid = guid,
         name = name or (entry and entry.name) or "Unknown",
         classToken = entry and entry.classToken,
-        auraName = aura and SafeString(aura.name, "<secret-name>"),
-        auraSpellID = aura and aura.spellId,
+        auraName = aura and SafeString(SafeField(aura, "name"), "<secret-name>"),
+        auraSpellID = aura and SafeField(aura, "spellId"),
     }
 
     lastDetectionTime = now
@@ -533,7 +552,7 @@ local function RecordPounce(guid, name, source, aura)
         #history,
         ColorizeName(history[#history].name, history[#history].classToken),
         source or "unknown",
-        aura and (" (" .. SafeString(aura.name, "<secret-name>") .. "/" .. SafeString(aura.spellId or "?", "?") .. ")") or ""))
+        aura and (" (" .. SafeString(SafeField(aura, "name"), "<secret-name>") .. "/" .. SafeString(SafeField(aura, "spellId", "?"), "?") .. ")") or ""))
 
     UpdateDisplay()
 end
@@ -597,8 +616,8 @@ local function ScanForNewAuras(source)
         for _, candidate in ipairs(candidates) do
             names[#names + 1] = string.format("%s:%s/%s",
                 ShortName(candidate.name) or "unknown",
-                SafeString(candidate.aura.name or "unknown", "<secret-name>"),
-                SafeString(candidate.aura.spellId or "?", "?"))
+                SafeString(SafeField(candidate.aura, "name", "unknown"), "<secret-name>"),
+                SafeString(SafeField(candidate.aura, "spellId", "?"), "?"))
         end
         Debug("Multiple new harmful auras seen; not choosing automatically: " .. table.concat(names, ", "))
     end
